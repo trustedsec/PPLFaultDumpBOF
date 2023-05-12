@@ -85,9 +85,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="entry.cpp" />
-    <ClCompile Include="PPLFault.cpp" />
-    <ClCompile Include="Payload.cpp" />
+    <ClCompile Include="entry.c" />
+    <ClCompile Include="PPLFault.c" />
+    <ClCompile Include="Payload.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\beacon.h" />
@@ -97,7 +97,6 @@
     <ClInclude Include="Payload.h" />
     <ClInclude Include="PPLFault.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="stringobf.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Payload.rc">

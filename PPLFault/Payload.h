@@ -1,10 +1,13 @@
 #pragma once
 
 #include <phnt_windows.h>
-#include <string>
 
-bool BuildPayload(
+
+BOOL BuildPayload(
     HANDLE hBenignDll,
-    std::string& payloadBuffer,
+    char** payloadBuffer,
     DWORD dwTargetProcessId,
-    PCWCHAR pDumpPath);
+    PCWCHAR pDumpPath,
+    DWORD* len,
+    uint8_t* shellcode,
+    DWORD shellcodelen);

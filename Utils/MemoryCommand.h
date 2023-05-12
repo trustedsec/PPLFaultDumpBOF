@@ -5,4 +5,4 @@
 
 #define SE_PROFILE_SINGLE_PROCESS_PRIVILEGE 13
 
-bool EmptySystemWorkingSet();
+BOOL EmptySystemWorkingSet();

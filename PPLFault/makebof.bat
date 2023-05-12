@@ -1,1 +1,1 @@
-cl.exe /I ..\common /I ..\phnt\include /I ..\Utils /I ..\DumpShellcode /GS- /c /DUNICODE /DBOF /EHs-c-r- entry.cpp
+cl.exe /I ..\common /I ..\phnt\include /I ..\Utils /I ..\DumpShellcode /GS- /c /DUNICODE /DBOF  entry.c

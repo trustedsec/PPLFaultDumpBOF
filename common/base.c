@@ -72,7 +72,7 @@ void internal_printf(const char* format, ...){
             {
             printoutput(FALSE); // sets currentoutsize to 0 and prints
             }
-            memset(transferBuffer, 0, transfersize); // reset our transfer buffer
+            MSVCRT$memset(transferBuffer, 0, transfersize); // reset our transfer buffer
             curloc += transfersize; // increment by how much data we just wrote
             buffersize -= transfersize; // subtract how much we just wrote from how much we are writing overall
         }
@@ -86,7 +86,7 @@ void printoutput(BOOL done)
     char * msg = NULL;
     BeaconOutput(CALLBACK_OUTPUT, output, currentoutsize);
     currentoutsize = 0;
-    memset(output, 0, bufsize);
+    MSVCRT$memset(output, 0, bufsize);
     if(done) {MSVCRT$free(output); output=NULL;}
 }
 #endif

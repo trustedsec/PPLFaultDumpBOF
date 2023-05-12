@@ -110,6 +110,8 @@ extern "C" {
         );
     PIMAGE_NT_HEADERS IMAGEAPI DBGHELP$ImageNtHeader(PVOID Base);
     PVOID IMAGEAPI DBGHELP$ImageRvaToVa(PIMAGE_NT_HEADERS NtHeaders, PVOID Base, ULONG Rva, PIMAGE_SECTION_HEADER* LastRvaSection);
+    WINBASEAPI BOOLEAN APIENTRY KERNEL32$CreateSymbolicLinkW(LPCWSTR lpSymlinkFileName, LPCWSTR lpTargetFileName, DWORD dwFlags);
+    WINBASEAPI WINBOOL WINAPI KERNEL32$CreateDirectoryW(LPCWSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurityAttributes);
 
     //KERNEL32
     WINBASEAPI HANDLE WINAPI KERNEL32$CreateEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, WINBOOL bManualReset, WINBOOL bInitialState, LPCWSTR lpName);
@@ -532,7 +534,7 @@ extern "C" {
 #define KERNEL32$GetDateFormatW GetDateFormatW 
 #define KERNEL32$GetSystemTimeAsFileTime GetSystemTimeAsFileTime 
 #define KERNEL32$GetSystemInfo GetSystemInfo
-#define KERNEL32$GetLastError GetLastError 
+#define KERNEL32$GetLastError KERNEL32$GetLastError 
 #define KERNEL32$SetLastError SetLastError 
 #define KERNEL32$CloseHandle CloseHandle 
 #define KERNEL32$GetTickCount GetTickCount 
