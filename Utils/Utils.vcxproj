@@ -81,7 +81,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Logging.cpp" />
     <ClCompile Include="MemoryCommand.cpp" />
     <ClCompile Include="PayloadUtils.cpp" />
   </ItemGroup>

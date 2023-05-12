@@ -94,6 +94,7 @@
     <ClInclude Include="Payload.h" />
     <ClInclude Include="PPLFault.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="stringobf.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Payload.rc">
