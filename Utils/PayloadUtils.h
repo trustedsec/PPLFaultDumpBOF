@@ -1,6 +1,6 @@
 
-//#include <phnt_windows.h>
-//#include <phnt.h>
+#include <phnt_windows.h>
+#include <phnt.h>
 #include <string>
 
 // Finds the address within buf of the image entrypoint 
