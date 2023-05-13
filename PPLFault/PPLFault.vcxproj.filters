@@ -15,11 +15,17 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Payload.cpp">
+    <ClCompile Include="entry.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PPLFault.cpp">
+    <ClCompile Include="PPLFault.c">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Payload.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="fnptr.h">
+      <Filter>Header Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -32,13 +38,16 @@
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Logging.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="PPLFault.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="stringobf.h">
+    <ClInclude Include="..\common\beacon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\bofdefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\ntdefs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

