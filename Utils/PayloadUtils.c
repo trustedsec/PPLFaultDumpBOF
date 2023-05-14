@@ -51,7 +51,7 @@ BOOL WriteShellcode(PVOID pBuf, PVOID shellcode, DWORD shellcodelen, DWORD* byte
     memcpy(pBuf, shellcode, shellcodelen);
     *bytesWritten = shellcodelen;
 
-    internal_printf("GetShellcode: %u bytes of shellcode written over DLL entrypoint", rSize);
+    internal_printf("GetShellcode: %u bytes of shellcode written over DLL entrypoint\n", shellcodelen);
 
 
     return TRUE;

