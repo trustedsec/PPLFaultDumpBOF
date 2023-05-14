@@ -63,3 +63,6 @@ HRESULT (__stdcall
     LPCWSTR SyncRootPath
 );
 typedef WINBOOL (WINAPI *fpGetFileAttributesExW)(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, LPVOID lpFileInformation);
+typedef HRESULT (WINAPI *fpCfDisconnectSyncRoot)(
+    CF_CONNECTION_KEY ConnectionKey
+);
