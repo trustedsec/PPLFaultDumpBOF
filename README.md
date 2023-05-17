@@ -16,7 +16,7 @@ Normally I like to use mingw-w64 to build my BOF's but given that this expolit r
 You need to start an x64 native visual studio developer prompt. Then from that prompt run [makebof.bat](PPLFault/makebof.bat)
 
 ## Code layout
-The layout of this code closely matches the original, but the original solution files are essentially broken.  Start at [entry.c](PPLFault/entry.c) as that is the BOF entry point and where all other .h / .c files are included.
+The layout of this code closely matches the original, but the original solution files have been removed as they are unused in a BOF build.  Start at [entry.c](PPLFault/entry.c) as that is the BOF entry point and where all other .h / .c files are included.
 
 ## Example Output
 
